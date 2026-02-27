@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #f1f5f9;
+  --background-gradient-start: #e2e8f0;
+  --background-gradient-end: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-border: #d1d5db;
+}
+
+.dark {
+  --background: #111827;
+  --background-gradient-start: #0f172a;
+  --background-gradient-end: #1f2937;
+  --foreground: #f1f5f9;
+  --card: #1f2937;
+  --card-border: rgba(255, 255, 255, 0.1);
+}
+
+body {
+  color: var(--foreground);
+  background: linear-gradient(135deg, var(--background-gradient-start) 0%, var(--background-gradient-end) 100%);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+h3 {
+  font-size: 1rem;
+  font-weight: 600;
+}
