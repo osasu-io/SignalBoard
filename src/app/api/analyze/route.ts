@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
 import { buildAnalysisPrompt, getSystemPrompt } from "@/lib/prompts";
 import { parseInputText } from "@/lib/parseInput";
 import type { FeedbackItem, ProcessedItem, AnalysisResult, AggregationResult, FrictionType, RiskLevel } from "@/lib/schema";
 
-const openai = new OpenAI({
-  apiKey: process.env.DEEPSEEK_API_KEY || "",
-  baseURL: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
-});
+const API_KEY = process.env.DEEPSEEK_API_KEY;
+const BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
 
 function isValidFrictionType(value: string): value is FrictionType {
   const validTypes = [
@@ -143,17 +140,37 @@ export async function POST(request: Request) {
     const prompt = buildAnalysisPrompt(formattedText);
     const systemPrompt = getSystemPrompt();
 
-    const completion = await openai.chat.completions.create({
-      model: "deepseek-chat",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: prompt },
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.3,
+    if (!API_KEY) {
+      throw new Error("DEEPSEEK_API_KEY is not set");
+    }
+
+    console.log("[DEBUG] Calling DeepSeek API with key length:", API_KEY.length);
+
+    const response = await fetch(`${BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: prompt },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.3,
+      }),
     });
 
-    const responseText = completion.choices[0]?.message?.content;
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("[ERROR] DeepSeek API error:", response.status, errorText);
+      throw new Error(`DeepSeek API error: ${response.status} - ${errorText}`);
+    }
+
+    const completion = await response.json();
+    const responseText = completion.choices?.[0]?.message?.content;
 
     if (!responseText) {
       throw new Error("Empty response from DeepSeek");
@@ -202,8 +219,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result);
   } catch (error) {
-    console.error("Analysis error:", error);
+    console.error("[ERROR] Analysis error:", error);
+    if (error instanceof Error) {
+      console.error("[ERROR] Message:", error.message);
+    }
     
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     const errorItem: ProcessedItem = {
       summary: "Analysis failed",
       friction_type: "other",
@@ -215,12 +236,13 @@ export async function POST(request: Request) {
       key_evidence: [],
       recommended_action: "Retry analysis",
       requires_human_review: true,
-      human_review_reason: error instanceof Error ? error.message : "Unknown error",
+      human_review_reason: errorMessage,
     };
 
     return NextResponse.json({
       items: [errorItem],
       aggregation: aggregateResults([errorItem]),
+      error: errorMessage,
     });
   }
 }

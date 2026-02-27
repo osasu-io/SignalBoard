@@ -111,18 +111,13 @@ __turbopack_context__.s([
     ()=>POST
 ]);
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/next/server.js [app-route] (ecmascript)");
-var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$openai$2f$index$2e$mjs__$5b$app$2d$route$5d$__$28$ecmascript$29$__$3c$locals$3e$__ = __turbopack_context__.i("[project]/node_modules/openai/index.mjs [app-route] (ecmascript) <locals>");
-var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$openai$2f$client$2e$mjs__$5b$app$2d$route$5d$__$28$ecmascript$29$__$3c$export__OpenAI__as__default$3e$__ = __turbopack_context__.i("[project]/node_modules/openai/client.mjs [app-route] (ecmascript) <export OpenAI as default>");
 var __TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$prompts$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/src/lib/prompts.ts [app-route] (ecmascript)");
 var __TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$parseInput$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/src/lib/parseInput.ts [app-route] (ecmascript)");
 ;
 ;
 ;
-;
-const openai = new __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$openai$2f$client$2e$mjs__$5b$app$2d$route$5d$__$28$ecmascript$29$__$3c$export__OpenAI__as__default$3e$__["default"]({
-    apiKey: process.env.DEEPSEEK_API_KEY || "",
-    baseURL: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com"
-});
+const API_KEY = process.env.DEEPSEEK_API_KEY;
+const BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
 function isValidFrictionType(value) {
     const validTypes = [
         "checkout_confusion",
@@ -231,24 +226,41 @@ async function POST(request) {
         const formattedText = feedbackItems.join("\n\n---\n\n");
         const prompt = (0, __TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$prompts$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["buildAnalysisPrompt"])(formattedText);
         const systemPrompt = (0, __TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$prompts$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["getSystemPrompt"])();
-        const completion = await openai.chat.completions.create({
-            model: "deepseek-chat",
-            messages: [
-                {
-                    role: "system",
-                    content: systemPrompt
-                },
-                {
-                    role: "user",
-                    content: prompt
-                }
-            ],
-            response_format: {
-                type: "json_object"
+        if (!API_KEY) {
+            throw new Error("DEEPSEEK_API_KEY is not set");
+        }
+        console.log("[DEBUG] Calling DeepSeek API with key length:", API_KEY.length);
+        const response = await fetch(`${BASE_URL}/chat/completions`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${API_KEY}`
             },
-            temperature: 0.3
+            body: JSON.stringify({
+                model: "deepseek-chat",
+                messages: [
+                    {
+                        role: "system",
+                        content: systemPrompt
+                    },
+                    {
+                        role: "user",
+                        content: prompt
+                    }
+                ],
+                response_format: {
+                    type: "json_object"
+                },
+                temperature: 0.3
+            })
         });
-        const responseText = completion.choices[0]?.message?.content;
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error("[ERROR] DeepSeek API error:", response.status, errorText);
+            throw new Error(`DeepSeek API error: ${response.status} - ${errorText}`);
+        }
+        const completion = await response.json();
+        const responseText = completion.choices?.[0]?.message?.content;
         if (!responseText) {
             throw new Error("Empty response from DeepSeek");
         }
@@ -296,7 +308,11 @@ async function POST(request) {
         };
         return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json(result);
     } catch (error) {
-        console.error("Analysis error:", error);
+        console.error("[ERROR] Analysis error:", error);
+        if (error instanceof Error) {
+            console.error("[ERROR] Message:", error.message);
+        }
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
         const errorItem = {
             summary: "Analysis failed",
             friction_type: "other",
@@ -308,7 +324,7 @@ async function POST(request) {
             key_evidence: [],
             recommended_action: "Retry analysis",
             requires_human_review: true,
-            human_review_reason: error instanceof Error ? error.message : "Unknown error"
+            human_review_reason: errorMessage
         };
         return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
             items: [
@@ -316,7 +332,8 @@ async function POST(request) {
             ],
             aggregation: aggregateResults([
                 errorItem
-            ])
+            ]),
+            error: errorMessage
         });
     }
 }
